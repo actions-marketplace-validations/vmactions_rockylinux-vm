@@ -50,7 +50,7 @@ are all in BaseOS, so every other sync method listed above is real.
 How the images are built:
 
 Each image is built automatically in the
-[anyvm-org/rocky-builder](https://github.com/anyvm-org/rocky-builder)
+[anyvm-org/rockylinux-builder](https://github.com/anyvm-org/rockylinux-builder)
 repo's GitHub Actions: it downloads the official Rocky Linux
 GenericCloud image, customizes it (serial console, ssh, first-boot
 setup), boots it in QEMU, pre-installs the packages listed in the conf,
@@ -106,7 +106,7 @@ jobs:
 ```
 
 
-The latest major version is: `v1`, which is the most recommended to use. (You can also use the latest full version: `v1.0.1`)  
+The latest major version is: `v1`, which is the most recommended to use. (You can also use the latest full version: `v1.0.3`)  
 
 
 If you are migrating from the previous `v0`, please change the `runs-on: ` to `runs-on: ubuntu-latest`
@@ -278,12 +278,12 @@ Support custom shell:
       with:
         sync: nfs
     - name: Custom shell step 1
-      shell: rocky {0}
+      shell: rockylinux {0}
       run: |
         pwd
         echo "this is step 1, running inside the VM"
     - name: Custom shell step 2
-      shell: rocky {0}
+      shell: rockylinux {0}
       run: |
         pwd
         echo "this is step 2, running inside the VM"
@@ -371,9 +371,32 @@ The `prepare` step (installing packages etc.) normally runs on every build. With
 ...
 ```
 
+That is all `cache-after-prepare` needs. The `cache-after-prepare-key-suffix` option below is **optional**; leave it out unless you need it.
+
+The cache key only covers the `prepare` text itself. When `prepare` runs a script from your repository, a change to that script would not rebuild the prepared image. The optional `cache-after-prepare-key-suffix` covers that case: its value is appended to the cache key, so a different value means a different cache. It can be a fixed string you bump by hand (`cache-after-prepare-key-suffix: v2`), or a hash of the files `prepare` depends on:
+
+```yml
+...
+    steps:
+    - uses: actions/checkout@v7
+    - name: Test
+      id: test
+      uses: vmactions/rockylinux-vm@v1
+      with:
+        cache-after-prepare: true
+        cache-after-prepare-key-suffix: deps-${{ hashFiles('ci/install-deps.sh') }}
+        prepare: |
+          sh ci/install-deps.sh
+        run: |
+          ...
+...
+```
+
+`hashFiles()` is evaluated on the runner, relative to the workspace, so the checkout must come first. It returns an empty string when no file matches, and the key then no longer follows the file, so double-check the path.
+
 Notes:
 
-- The cache key includes a hash of the `prepare` script and the `sync` method, so changing either of them rebuilds the prepared image from the base image.
+- The cache key includes a hash of the `prepare` script and the `sync` method, so changing either of them rebuilds the prepared image from the base image. `cache-after-prepare-key-suffix` is optional and empty by default; when set, its value is appended to the key.
 - The source tree is still synchronized into the VM on every run; only the `prepare` step is skipped.
 - The first run (or any run after `prepare` changes) takes longer: the VM is shut down after `prepare`, the prepared image is cached, and the VM boots again before `run`.
 - The action output `cache-after-prepare-hit` is `true` when a prepared image was restored and `prepare` was skipped.
